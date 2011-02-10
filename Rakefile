@@ -60,12 +60,12 @@ end
 
 desc "starts the server as daemon"
 task :start do
-  sh "erl +K true #{RUN_INCLUDE_PATHS} -noshell -noinput -detached -sname #{NODE_NAME} -setcookie #{COOKIE} -run server start"
+  sh "erl +K true #{RUN_INCLUDE_PATHS} -noshell -noinput -detached -sname #{NODE_NAME} -setcookie #{COOKIE} -run flashpolicy_app start"
 end
 
 desc "starts the server and opens the erlang console"
 task :debug => [:build] do
-  sh "erl +K true #{RUN_INCLUDE_PATHS} -sname #{NODE_NAME} -setcookie #{COOKIE} -run server start"
+  sh "erl +K true #{RUN_INCLUDE_PATHS} -sname #{NODE_NAME} -setcookie #{COOKIE} -run flashpolicy_app start"
 end
 
 task :monitor do
@@ -75,7 +75,7 @@ task :monitor do
   servers = []
   running_servers.each_line do |server|
     if server.strip != ""
-      /-sname\s+(\w+)\s+.*-setcookie\s+(\w+)\s+/ =~ server
+      /-sname\s+(\w+)\s+.*-setcookie\s+(\S+)\s+/ =~ server
       node_name = Regexp.last_match(1)
       cookie = Regexp.last_match(2)
       servers << { :node => node_name, :cookie => cookie}
@@ -144,6 +144,6 @@ end
 
 desc "Starts textmate wit required directories only"
 task :mate do
-  sh "mate include src test ebin/flashpolicy.app Rakefile"
+  sh "mate include src test ebin/flashpolicy.app Rakefile README.markdown"
 end
 

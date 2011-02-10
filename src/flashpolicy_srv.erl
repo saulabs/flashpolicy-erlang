@@ -39,14 +39,18 @@ init([PolicyFile = [_|_], ListenAddress, Port, LoggingEnabled]) when is_integer(
             policy = PolicyContent
           },
           StateWithAcceptLoopStated = State#state { accept_pid = spawn_accept_process(State) },
-          error_logger:info_report([{message, 'started policy server.'}, {listen_address, ListenAddress}, {port, Port}, {module, ?MODULE}, {line, ?LINE}]),
+          error_logger:info_report([{message, 'started policy server.'}, {listen_address, ListenAddress}, {port, Port}, {policy, PolicyFile}, {module, ?MODULE}, {line, ?LINE}]),
           {ok, StateWithAcceptLoopStated};
         Error -> % could not listen at port
           {stop, Error}
       end;
     {error, Reason} -> % could not load policy file
+      error_logger:error_report([{message, 'could not load policy file.'}, {file, PolicyFile}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}]),
       {stop, Reason}
   end.
+
+stop() ->
+  gen_server:cast({local, ?MODULE}, stop).
 
 % accept loop terminated
 handle_info({'EXIT', AcceptLoopPid, Reason}, State = #state {accept_pid = AcceptLoopPid})->
@@ -125,7 +129,6 @@ send_policy(Socket, PolicyContent) ->
     after 1000 -> ok
   end.
 
-
 spawn_accept_process(State = #state{}) -> 
  spawn_link(fun() -> accept(State) end).
  
@@ -160,8 +163,15 @@ handle_socket_messages(SocketState) ->
       accept(SocketState)
   end.
                 
-stop() ->
-  gen_server:cast({local, ?MODULE}, stop).
-
-load_policy_file(_PolicyFile) ->
-  {ok, "Hello"}.
+readlines(FileHandle, Acc) ->
+  case io:get_line(FileHandle, "") of
+    eof  -> file:close(FileHandle), Acc;
+    Line -> readlines(FileHandle, [Line | Acc])
+  end.
+    
+load_policy_file(PolicyFile) ->
+  case file:open(PolicyFile, [read]) of
+    {ok, FileHandle}         -> {ok, lists:flatten(lists:reverse(readlines(FileHandle, []))) ++ [0]};
+    Error = {error, _Reason} -> Error;
+    Unknown                  -> {error, Unknown}
+  end.

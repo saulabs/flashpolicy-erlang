@@ -5,7 +5,7 @@
 
 -export([start/0, start/2, stop/1]).
 
--define(DEFAULT_FILE, "../flashpolicy.xml").
+-define(DEFAULT_FILE, "./flashpolicy.xml").
 -define(DEFAULT_LOGGING, false).
 -define(DEFAULT_ADDRESS, any).
 -define(DEFAULT_PORT, 843).

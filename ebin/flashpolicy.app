@@ -6,7 +6,7 @@
   {applications, [kernel, stdlib]},
   {mod, {flashpolicy_app,[]}},
   {env, [  
-    {policy_file, "../flashpolicy.xml"},      
+    {policy_file, "./flashpolicy.xml"},      
     {enable_logging, false},                    %% true | false
     {listen_at_interface, any},                 %% any | e.g. {192,168,0,2}
     {port, 843}]}

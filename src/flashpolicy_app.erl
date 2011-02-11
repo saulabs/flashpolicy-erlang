@@ -6,7 +6,7 @@
 -include("socket_config.hrl").
 
 -export([start/2, stop/1]).
--export([start/0, enable_logging/1]).
+-export([start/0, enable_logging/1, reload_policy_files/0]).
 
 -define(DEFAULT_FILE, "./flashpolicy.xml").
 -define(DEFAULT_LOG_PATH, "./log/").
@@ -66,3 +66,6 @@ enable_logging(_Enable = true) ->
       error_logger:logfile({open, LogFileName });
     _FileName -> alread_enabled
   end.
+
+reload_policy_files() ->
+  [gen_server:cast(ChildPid, reload_policy_file) || {_Id, ChildPid, _Type, _Modules} <- supervisor:which_children(flashpolicy_sup)].

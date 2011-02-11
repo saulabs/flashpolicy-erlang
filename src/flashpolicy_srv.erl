@@ -2,24 +2,25 @@
 
 -behaviour(gen_server).
 
--export([start_link/3, stop/0]).
+-include("socket_config.hrl").
+
+-export([start_link/1, stop/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 -export([send_policy/4, registered_server_name/2]).
 
 -record(state, {
-  listen_address,
-  listen_port,
-  server_socket,
-  policy,
-  accept_pid = none,
-  accepted_clients = []
+  configuration = #socket_config{}, %% socket_config(): containing address, port and policy file
+  policy_data = "",                 %% list(): policy file content
+  server_socket,                    %% ref(): the server socket.
+  accept_pid = none,                %% pid(): the process id of the accept loop
+  accepted_clients = []             %% [pid()]: list of accepted clients that receive policy file content
 }).
 
 
-start_link(PolicyFile = [_|_], ListenAddress, Port) when is_integer(Port) ->
-  gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [PolicyFile, ListenAddress, Port], []).
+start_link(Configuration = #socket_config{ policy_file = [_|_], bind_address = ListenAddress, bind_port = Port}) when is_integer(Port) ->
+  gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [Configuration], []).
   
-init([PolicyFile = [_|_], ListenAddress, Port]) when is_integer(Port) ->
+init([Configuration = #socket_config{ policy_file = PolicyFile = [_|_], bind_address = ListenAddress, bind_port = Port}]) when is_integer(Port) ->
   process_flag(trap_exit, true),
 
   ListenOptions = [binary, {packet_size, 2048}, {packet, 2}, {backlog, 1024}, {active, false}, {reuseaddr, true}] ++ 
@@ -33,13 +34,12 @@ init([PolicyFile = [_|_], ListenAddress, Port]) when is_integer(Port) ->
       case gen_tcp:listen(Port, ListenOptions) of
         {ok, ServerSocket} ->
           State = #state {
-            listen_address = ListenAddress,
-            listen_port = Port,
+            configuration = Configuration,
             server_socket = ServerSocket,
-            policy = PolicyContent
+            policy_data = PolicyContent
           },
           StateWithAcceptLoopStated = State#state { accept_pid = spawn_accept_process(State) },
-          error_logger:info_report([{message, 'started policy server.'}, {listen_address, ListenAddress}, {port, Port}, {policy, PolicyFile}, {module, ?MODULE}, {line, ?LINE}]),
+          error_logger:info_report([{message, 'started policy server.'}, {bind_address, ListenAddress}, {port, Port}, {policy, PolicyFile}, {module, ?MODULE}, {line, ?LINE}]),
           {ok, StateWithAcceptLoopStated};
         Error -> % could not listen at port
           {stop, Error}
@@ -77,14 +77,24 @@ handle_info({accepted, ConnectionPid}, State = #state{ accepted_clients = Accept
   {noreply, StateWithAcceptedConnection};
   
 % stop this tcp server
-handle_info(stop, State = #state {listen_address = ListenAddress, listen_port = Port, accept_pid = AcceptLoopPid}) ->
-  error_logger:info_report([{message, 'stopping tcp server.'}, {listen_address, ListenAddress}, {port, Port}, {module, ?MODULE}, {line, ?LINE}]),
+handle_info(stop, State = #state {configuration = #socket_config{ bind_address = ListenAddress, bind_port = Port}, accept_pid = AcceptLoopPid}) ->
+  error_logger:info_report([{message, 'stopping tcp server.'}, {bind_address, ListenAddress}, {port, Port}, {module, ?MODULE}, {line, ?LINE}]),
   AcceptLoopPid ! stop,  
   {stop, normal, State};
 
 handle_info(Event, State) ->
   error_logger:info_report([{message, 'received unexpected event in handle_info.'}, {event, Event}, {module, ?MODULE}, {line, ?LINE}]),
   {noreply, State}.
+
+handle_cast(reload_policy_file, State = #state{ configuration = #socket_config{policy_file = PolicyFile}, accept_pid = AcceptLoopPid}) ->
+  case load_policy_file(PolicyFile) of
+    {ok, PolicyContent} -> 
+      AcceptLoopPid ! {reloaded_policy_file, PolicyContent},
+      {noreply, State#state {policy_data = PolicyContent}};
+    {error, Reason} -> 
+      error_logger:error_report([{message, 'could not reload load policy file.'}, {file, PolicyFile}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}]),
+      {noreply, State}
+  end;
 
 handle_cast(Event, State) ->
   error_logger:info_report([{message, 'received unexpected event in handle_cast.'}, {event, Event}, {module, ?MODULE}, {line, ?LINE}]),
@@ -140,7 +150,7 @@ spawn_accept_process(State = #state{}) ->
  spawn_link(fun() -> accept(State) end).
  
 accept(State = #state{}) ->
-  #state{server_socket = ServerSocket, policy = PolicyContent, listen_address = Address, listen_port = Port} = State,
+  #state{server_socket = ServerSocket, policy_data = PolicyContent, configuration = #socket_config {bind_address = Address, bind_port = Port}} = State,
   case gen_tcp:accept(ServerSocket) of 
     {ok, SocketPid} ->
       ConnectionPid = spawn(?MODULE, send_policy, [SocketPid, PolicyContent, Address, Port]),
@@ -160,15 +170,16 @@ accept(State = #state{}) ->
       handle_socket_messages(State)
   end.
 
-handle_socket_messages(SocketState) ->
+handle_socket_messages(State) ->
   receive
     Message -> 
       case Message of
         stop   -> stop;
-        _Other -> accept(SocketState)
+        {reloaded_policy_file, UpdatedPolicyData} -> accept(State#state{policy_data = UpdatedPolicyData});
+        _Other -> accept(State)
       end
     after 0 ->
-      accept(SocketState)
+      accept(State)
   end.
                 
 readlines(FileHandle, Acc) ->

@@ -7,7 +7,8 @@
   {mod, {flashpolicy_app,[]}},
   {env, [  
     {policy_file, "./flashpolicy.xml"},         %% string(): policifile to serve
-    {enable_logging, false},                    %% boolean(): enable or disable logging
+    {enable_logging, true},                     %% boolean(): enable or disable logging
+    {logfile_path, "./log/"},                   %% string(): path to logfiles. must end with path separator '/'
     {listen_at_interface, any},                 %% any | e.g. {192,168,0,2}: the ip address as tuple to bind at, or 'any' to listen at all interfaces
     {port, 843},                                %% integer(): the port to listen at
 

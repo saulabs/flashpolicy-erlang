@@ -2,9 +2,9 @@
 
 -behaviour(gen_server).
 
--export([start_link/4, stop/0]).
+-export([start_link/3, stop/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([send_policy/2, registered_server_name/2]).
+-export([send_policy/4, registered_server_name/2]).
 
 -record(state, {
   listen_address,
@@ -16,10 +16,10 @@
 }).
 
 
-start_link(PolicyFile = [_|_], ListenAddress, Port, LoggingEnabled) when is_integer(Port), is_boolean(LoggingEnabled) ->
-  gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [PolicyFile, ListenAddress, Port, LoggingEnabled], []).
+start_link(PolicyFile = [_|_], ListenAddress, Port) when is_integer(Port) ->
+  gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [PolicyFile, ListenAddress, Port], []).
   
-init([PolicyFile = [_|_], ListenAddress, Port, LoggingEnabled]) when is_integer(Port), is_boolean(LoggingEnabled) ->
+init([PolicyFile = [_|_], ListenAddress, Port]) when is_integer(Port) ->
   process_flag(trap_exit, true),
 
   ListenOptions = [binary, {packet_size, 2048}, {packet, 2}, {backlog, 1024}, {active, false}, {reuseaddr, true}] ++ 
@@ -104,7 +104,7 @@ code_change(_OldVsn, State, _Extra) ->
 send_to_client(Socket, PolicyContent) ->
   gen_tcp:send(Socket, PolicyContent). 
 
-send_policy(Socket, PolicyContent) ->
+send_policy(Socket, PolicyContent, Address, Port) ->
   receive
     became_controlling_process ->
       SocketOptions = [
@@ -114,15 +114,22 @@ send_policy(Socket, PolicyContent) ->
         {send_timeout_close, true},
         {keepalive, true}
       ],
-      IP = unknown,
+      ClientAddress = case catch inet:peername(Socket) of 
+        {ok, {{A, B, C, D}, SrcPort}} -> io_lib:format("~b.~b.~b.~b:~b", [A, B, C, D, SrcPort]);
+        _ -> "unknown_ip"
+      end,
+      ServerAddress = case Address of
+        {E, F, G, H} -> io_lib:format("~b.~b.~b.~b:~b", [E, F, G, H, Port]);
+        any          -> io_lib:format("localhost:~b", [Port])
+      end,
+      InfoMessage = io_lib:format("~s => ~s", [lists:flatten(ServerAddress), lists:flatten(ClientAddress)]),
       case inet:setopts(Socket, SocketOptions) of
         ok -> 
           case catch send_to_client(Socket, PolicyContent) of 
-            ok              -> error_logger:info_report([{message, 'sent policy to client.'}, {ip, IP}, {module, ?MODULE}, {line, ?LINE}]);
-            {error, Reason} -> error_logger:info_report([{message, 'faild to send policy to client.'}, {ip, IP}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
+            ok              -> error_logger:info_report([{ok, lists:flatten(InfoMessage)}]);
+            {error, Reason} -> error_logger:error_report([{message, 'send failed'}, {request, InfoMessage}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
           end;
-        Error -> % could not send policy
-          error_logger:info_report([{message, 'faild to send policy to client.'}, {ip, IP}, {error, Error}, {module, ?MODULE}, {line, ?LINE}])
+        Error -> error_logger:error_report([{message, 'set socket options failed'}, {request, InfoMessage}, {error, Error}, {module, ?MODULE}, {line, ?LINE}])
       end,
       catch gen_tcp:close(Socket);
     stop -> ok
@@ -132,10 +139,11 @@ send_policy(Socket, PolicyContent) ->
 spawn_accept_process(State = #state{}) -> 
  spawn_link(fun() -> accept(State) end).
  
-accept(State = #state{server_socket = ServerSocket, policy = PolicyContent}) ->
+accept(State = #state{}) ->
+  #state{server_socket = ServerSocket, policy = PolicyContent, listen_address = Address, listen_port = Port} = State,
   case gen_tcp:accept(ServerSocket) of 
     {ok, SocketPid} ->
-      ConnectionPid = spawn(?MODULE, send_policy, [SocketPid, PolicyContent]),
+      ConnectionPid = spawn(?MODULE, send_policy, [SocketPid, PolicyContent, Address, Port]),
       case gen_tcp:controlling_process(SocketPid, ConnectionPid) of
         ok              -> ConnectionPid ! became_controlling_process;
         {error, closed} -> ConnectionPid ! stop;

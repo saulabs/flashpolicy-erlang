@@ -4,7 +4,7 @@
 
 -export([start_link/4, stop/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([send_policy/2]).
+-export([send_policy/2, registered_server_name/2]).
 
 -record(state, {
   listen_address,
@@ -17,7 +17,7 @@
 
 
 start_link(PolicyFile = [_|_], ListenAddress, Port, LoggingEnabled) when is_integer(Port), is_boolean(LoggingEnabled) ->
-  gen_server:start_link({local, ?MODULE}, ?MODULE, [PolicyFile, ListenAddress, Port, LoggingEnabled], []).
+  gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [PolicyFile, ListenAddress, Port, LoggingEnabled], []).
   
 init([PolicyFile = [_|_], ListenAddress, Port, LoggingEnabled]) when is_integer(Port), is_boolean(LoggingEnabled) ->
   process_flag(trap_exit, true),
@@ -175,3 +175,8 @@ load_policy_file(PolicyFile) ->
     Error = {error, _Reason} -> Error;
     Unknown                  -> {error, Unknown}
   end.
+
+registered_server_name(_Interface = {A,B,C,D}, Port) when is_integer(A), is_integer(B), is_integer(C), is_integer(D), is_integer(Port) ->
+  list_to_atom("flashpolicy_srv:" ++ integer_to_list(A) ++ "." ++ integer_to_list(B) ++ "." ++ integer_to_list(C) ++ "." ++ integer_to_list(D) ++ ":" ++ integer_to_list(Port));
+registered_server_name(Interface = any, Port) when is_integer(Port) ->
+  list_to_atom("flashpolicy_srv:" ++ atom_to_list(Interface) ++ ":" ++ integer_to_list(Port)).

@@ -10,6 +10,7 @@ ERL=`which erl || echo 'erl'`
 RUN_INCLUDE_PATHS="-pa ./ebin"
 MONITOR_CMD="$ERL -pa $RUN_INCLUDE_PATHS -setcookie $COOKIE -sname monitor -noshell -noinput"
 MONITOR_SHUTDOWN="-run erlang halt"
+SERVER_CMD="$ERL +K true $RUN_INCLUDE_PATHS -noshell -noinput -detached -sname $NODE_NAME -setcookie $COOKIE -heart -run flashpolicy_app start"
 
 if [ $# -ne 1 ]
 then
@@ -30,7 +31,8 @@ else
   if [ $ACTION == "start" ]; then
     echo "starting server..."
     if [ $USER != "root" ]; then echo "YOU SHOULD START THE POLICY SERVER AS ROOT\n(because it usually binds to privileged prot 843)"; fi
-    $ERL +K true $RUN_INCLUDE_PATHS -noshell -noinput -detached -sname $NODE_NAME -setcookie $COOKIE -run flashpolicy_app start
+    export HEART_COMMAND=$SERVER_CMD
+    $SERVER_CMD
   elif [ $ACTION == "stop" ]; then
     $MONITOR_CMD -run flashpolicy_app shutdown $NODE_NAME $MONITOR_SHUTDOWN
   elif [ $ACTION == "status" ]; then

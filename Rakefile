@@ -69,7 +69,7 @@ task :debug => [:build] do
 end
 
 task :monitor do
-  host_name = `hostname`.strip
+  host_name = `hostname -s`.strip
   monitor_name = "monitor_#{Time.now.to_i}"
   running_servers = `ps ax | grep beam | grep sname | grep cookie | grep -v grep | grep -v monitor`.strip
   servers = []
@@ -79,7 +79,7 @@ task :monitor do
       node_name = Regexp.last_match(1)
       cookie = Regexp.last_match(2)
       servers << { :node => node_name, :cookie => cookie}
-    end    
+    end
   end
   if servers.size == 0
     puts "no running servers found!"
@@ -88,7 +88,7 @@ task :monitor do
     cookie = servers[0][:cookie]
     puts "connecting to node '#{node_name}' on host '#{host_name}' with cookie '#{cookie}'"
     sh "erl #{RUN_INCLUDE_PATHS} -setcookie #{cookie} -sname #{monitor_name} -remsh #{node_name}@#{host_name}"
-  else 
+  else
     puts "choose server ..."
     servers.each_with_index do |server, i|
       node_name = server[:node]
@@ -107,7 +107,7 @@ end
 
 task :test => [:build_test] do
   mods = Dir["test/*_test.erl"].map { |x| x.match(/test\/(.*)_test.erl/)[1] }
-  
+
   has_test_failures = false
   total_tests = total_failed = total_passed = total_skipped = 0
 
@@ -131,7 +131,7 @@ task :test => [:build_test] do
     end
     puts result
   end
-  
+
   puts "Total: #{total_tests} | Failed: #{total_failed} | Passed: #{total_passed} | Skipped: #{total_skipped}"
   fail(Exception.new("#{total_failed} test failed")) if has_test_failures
 end

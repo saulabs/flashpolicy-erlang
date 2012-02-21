@@ -19,16 +19,16 @@
 
 start_link(Configuration = #socket_config{ policy_file = [_|_], bind_address = ListenAddress, bind_port = Port}) when is_integer(Port) ->
   gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [Configuration], []).
-  
+
 init([Configuration = #socket_config{ policy_file = PolicyFile = [_|_], bind_address = ListenAddress, bind_port = Port}]) when is_integer(Port) ->
   process_flag(trap_exit, true),
 
-  ListenOptions = [binary, {packet_size, 2048}, {packet, 2}, {backlog, 1024}, {active, false}, {reuseaddr, true}] ++ 
-                  case ListenAddress of 
+  ListenOptions = [binary, {packet_size, 2048}, {packet, 2}, {backlog, 1024}, {active, false}, {reuseaddr, true}] ++
+                  case ListenAddress of
                     {_, _, _, _} -> [{ip, ListenAddress}];
                     _Any -> []
                   end,
-                  
+
   case load_policy_file(PolicyFile) of
     {ok, PolicyContent} ->
       case gen_tcp:listen(Port, ListenOptions) of
@@ -54,7 +54,7 @@ stop() ->
 
 % accept loop terminated
 handle_info({'EXIT', AcceptLoopPid, Reason}, State = #state {accept_pid = AcceptLoopPid})->
-  case Reason of 
+  case Reason of
     normal -> {stop, normal, State#state {accept_pid = none}};
     _ ->
       error_logger:error_report([{message, 'restarting accept loop.'}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}]),
@@ -63,23 +63,23 @@ handle_info({'EXIT', AcceptLoopPid, Reason}, State = #state {accept_pid = Accept
 
 % client connection terminated
 handle_info({'EXIT', ConnectionPid, _Reason}, State = #state{ accepted_clients = AcceptedClients}) ->
-  case lists:member(ConnectionPid, AcceptedClients) of 
+  case lists:member(ConnectionPid, AcceptedClients) of
     true  -> {noreply, State#state { accepted_clients = lists:delete(ConnectionPid, AcceptedClients)}};
     false -> {noreply, State} % connection pid not found
   end;
-  
-% client connection established  
+
+% client connection established
 handle_info({accepted, ConnectionPid}, State = #state{ accepted_clients = AcceptedClients}) ->
   StateWithAcceptedConnection = case catch erlang:link(ConnectionPid) of
     true -> State#state {accepted_clients = [ConnectionPid | AcceptedClients]};
     _    -> State
   end,
   {noreply, StateWithAcceptedConnection};
-  
+
 % stop this tcp server
 handle_info(stop, State = #state {configuration = #socket_config{ bind_address = ListenAddress, bind_port = Port}, accept_pid = AcceptLoopPid}) ->
   error_logger:info_report([{message, 'stopping tcp server.'}, {bind_address, ListenAddress}, {port, Port}, {module, ?MODULE}, {line, ?LINE}]),
-  AcceptLoopPid ! stop,  
+  AcceptLoopPid ! stop,
   {stop, normal, State};
 
 handle_info(Event, State) ->
@@ -88,10 +88,10 @@ handle_info(Event, State) ->
 
 handle_cast(reload_policy_file, State = #state{ configuration = #socket_config{policy_file = PolicyFile}, accept_pid = AcceptLoopPid}) ->
   case load_policy_file(PolicyFile) of
-    {ok, PolicyContent} -> 
+    {ok, PolicyContent} ->
       AcceptLoopPid ! {reloaded_policy_file, PolicyContent},
       {noreply, State#state {policy_data = PolicyContent}};
-    {error, Reason} -> 
+    {error, Reason} ->
       error_logger:error_report([{message, 'could not reload load policy file.'}, {file, PolicyFile}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}]),
       {noreply, State}
   end;
@@ -99,6 +99,9 @@ handle_cast(reload_policy_file, State = #state{ configuration = #socket_config{p
 handle_cast(Event, State) ->
   error_logger:info_report([{message, 'received unexpected event in handle_cast.'}, {event, Event}, {module, ?MODULE}, {line, ?LINE}]),
   {noreply, State}.
+
+handle_call(status, _From, State = #state{ configuration = SocketConfig = #socket_config{}, accepted_clients = AcceptedClients}) ->
+  {reply, {SocketConfig, AcceptedClients}, State};
 
 handle_call(Event, _From, State) ->
   error_logger:info_report([{message, 'received unexpected event in handle_cal.'}, {event, Event}, {module, ?MODULE}, {line, ?LINE}]),
@@ -112,7 +115,7 @@ code_change(_OldVsn, State, _Extra) ->
  {ok, State}.
 
 send_to_client(Socket, PolicyContent) ->
-  gen_tcp:send(Socket, PolicyContent). 
+  gen_tcp:send(Socket, PolicyContent).
 
 send_policy(Socket, PolicyContent, Address, Port) ->
   receive
@@ -124,7 +127,7 @@ send_policy(Socket, PolicyContent, Address, Port) ->
         {send_timeout_close, true},
         {keepalive, true}
       ],
-      ClientAddress = case catch inet:peername(Socket) of 
+      ClientAddress = case catch inet:peername(Socket) of
         {ok, {{A, B, C, D}, SrcPort}} -> io_lib:format("~b.~b.~b.~b:~b", [A, B, C, D, SrcPort]);
         _ -> "unknown_ip"
       end,
@@ -134,8 +137,8 @@ send_policy(Socket, PolicyContent, Address, Port) ->
       end,
       InfoMessage = io_lib:format("~s => ~s", [lists:flatten(ServerAddress), lists:flatten(ClientAddress)]),
       case inet:setopts(Socket, SocketOptions) of
-        ok -> 
-          case catch send_to_client(Socket, PolicyContent) of 
+        ok ->
+          case catch send_to_client(Socket, PolicyContent) of
             ok              -> error_logger:info_report([{ok, lists:flatten(InfoMessage)}]);
             {error, Reason} -> error_logger:error_report([{message, 'send failed'}, {request, InfoMessage}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
           end;
@@ -146,12 +149,12 @@ send_policy(Socket, PolicyContent, Address, Port) ->
     after 1000 -> ok
   end.
 
-spawn_accept_process(State = #state{}) -> 
+spawn_accept_process(State = #state{}) ->
  spawn_link(fun() -> accept(State) end).
- 
+
 accept(State = #state{}) ->
   #state{server_socket = ServerSocket, policy_data = PolicyContent, configuration = #socket_config {bind_address = Address, bind_port = Port}} = State,
-  case gen_tcp:accept(ServerSocket) of 
+  case gen_tcp:accept(ServerSocket) of
     {ok, SocketPid} ->
       ConnectionPid = spawn(?MODULE, send_policy, [SocketPid, PolicyContent, Address, Port]),
       case gen_tcp:controlling_process(SocketPid, ConnectionPid) of
@@ -159,7 +162,7 @@ accept(State = #state{}) ->
         {error, closed} -> ConnectionPid ! stop;
         {error, Reason} -> ConnectionPid ! stop,
             error_logger:error_report([{message, 'error when setting client connection as controlling process'}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
-      end,      
+      end,
       handle_socket_messages(State);
     {error, timeout} ->
       handle_socket_messages(State);
@@ -172,7 +175,7 @@ accept(State = #state{}) ->
 
 handle_socket_messages(State) ->
   receive
-    Message -> 
+    Message ->
       case Message of
         stop   -> stop;
         {reloaded_policy_file, UpdatedPolicyData} -> accept(State#state{policy_data = UpdatedPolicyData});
@@ -181,13 +184,13 @@ handle_socket_messages(State) ->
     after 0 ->
       accept(State)
   end.
-                
+
 readlines(FileHandle, Acc) ->
   case io:get_line(FileHandle, "") of
     eof  -> file:close(FileHandle), Acc;
     Line -> readlines(FileHandle, [Line | Acc])
   end.
-    
+
 load_policy_file(PolicyFile) ->
   case file:open(PolicyFile, [read]) of
     {ok, FileHandle}         -> {ok, lists:flatten(lists:reverse(readlines(FileHandle, []))) ++ [0]};

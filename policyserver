@@ -1,0 +1,56 @@
+#!/bin/sh
+# starts, stops and controlls the flash policy server
+# see http://github.com/saulabs/flashpolicy-erlang
+
+COOKIE="flashpolicy-erlang"
+NODE="flashpolicy"
+
+NODE_NAME="$NODE@"`hostname -s`
+ERL=`which erl || echo 'erl'`
+RUN_INCLUDE_PATHS="-pa ./ebin"
+MONITOR_CMD="$ERL -pa $RUN_INCLUDE_PATHS -setcookie $COOKIE -sname monitor -noshell -noinput"
+MONITOR_SHUTDOWN="-run erlang halt"
+
+if [ $# -ne 1 ]
+then
+  echo "Starts or stops the flash policy server"
+  echo
+  echo "Usage: `basename $0` start|stop|status|reload|test|[enable|disable]-logging"
+  echo
+  echo "start:           starts the flash policy server (detached)"
+  echo "stop:            stops the runnning flash policy server"
+  echo "status:          prints the server status to stdout"
+  echo "reload:          reloads the flashpolicy.xml file"
+  echo "test:            loads the flash policy file from the server via http"
+  echo "enable-logging:  enables the logging of accepted connections"
+  echo "disable-logging: disables the logging of accepted connections"
+  echo
+else
+  ACTION=$1
+  if [ $ACTION == "start" ]; then
+    echo "starting server..."
+    if [ $USER != "root" ]; then echo "YOU SHOULD START THE POLICY SERVER AS ROOT\n(because it usually binds to privileged prot 843)"; fi
+    $ERL +K true $RUN_INCLUDE_PATHS -noshell -noinput -detached -sname $NODE_NAME -setcookie $COOKIE -run flashpolicy_app start
+  elif [ $ACTION == "stop" ]; then
+    $MONITOR_CMD -run flashpolicy_app shutdown $NODE_NAME $MONITOR_SHUTDOWN
+  elif [ $ACTION == "status" ]; then
+    echo "server status..."
+    $MONITOR_CMD -run flashpolicy_app status $NODE_NAME $MONITOR_SHUTDOWN
+    exit $?
+  elif [ $ACTION == "reload" ]; then
+    echo "reloading flash policy xml file..."
+    $MONITOR_CMD -run flashpolicy_app execute $NODE_NAME reload $MONITOR_SHUTDOWN
+  elif [ $ACTION == "test" ]; then
+    echo "loading policy file from server..."
+    curl --  http://127.0.0.1:843
+  elif [ $ACTION == "enable-logging" ]; then
+    echo "enabling logging..."
+    $MONITOR_CMD -run flashpolicy_app execute $NODE_NAME enable-logging $MONITOR_SHUTDOWN
+  elif [ $ACTION == "disable-logging" ]; then
+    echo "disabling logging..."
+    $MONITOR_CMD -run flashpolicy_app execute $NODE_NAME disable-logging $MONITOR_SHUTDOWN
+  else
+    $0
+  fi
+fi
+

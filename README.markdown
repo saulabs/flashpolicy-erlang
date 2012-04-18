@@ -4,33 +4,51 @@ Erlang Flash Policy File Server
 
 ###Erlang Server serving flash crossdomain policies on adobe standard port 843, intended for use in production environments.
 
-* Building Server:
+* ####Building Server:
 
-        erlc -I include -o ebin -v src/*.erl
+        ./build.sh
+        
+* ####Configure Policy File:
 
-
-* Testing Server:
-
-        sudo erl -pa ./ebin -flashpolicy -run flashpolicy_app start
-
-        perl -e 'printf "<policy-file-request/>%c",0' | nc 127.0.0.1 843
+    Edit _flashpolicy.xml_ and replace `<allow-access-from domain="*" to-ports="123" />` __port__ 123 with a comma separated list of ports your flash client should be allowed to connect at, and maybe replace the wildcard __domain__ with the domain that serves your flash file.
 
 * Starting __Production__ Server:
 
-        sudo erl -pa ./ebin -noshell -noinput -detached -flashpolicy -run flashpolicy_app start
+        sudo ./policyserver start
+        
+      Notice: You must be __root__ to start the server because it binds by default to the __privileged port__ 843.
 
-* Starting Production Server binding __only at given interface__ _192.168.12.13_ at __custom port__ _1234_:
+* ####Testing Server:
 
-        erl -pa ./ebin -noshell -noinput -detached -flashpolicy listen_at_interface '{192,168,12,13}' port '1234' -run flashpolicy_app start
 
-* Starting Production Server binding at all interfaces at default port _843_ __and additional port__ _1234_:
+        perl -e 'printf "<policy-file-request/>%c",0' | nc 127.0.0.1 843
+        
+        # or
+        
+        ./policyserver test
 
-        sudo erl -pa ./ebin -noshell -noinput -detached -flashpolicy bind_also_at '[{any, 1234, "./flashpolicy.xml"}]' -run flashpolicy_app start
+* ####Reload Policy File:
+   
+    If you __modified the _flashpolicy.xml_ file__, you can __reload__ it during runtime using `./policyserver reload`.  
+        
+* ####Extended Server Configuration:
 
-* Starting Production Server and __disable logging__:
+    The server can be configured in the _env_ section of either the _src/flashpolicy.app.src_ file or the _ebin/flashpolicy.app_ file. If you edit the _src/flashpolicy.app.src_ file you must run `./build.sh` again, that will copy it to the _ebin_ directory and __overwrite__ the _ebin/flashpolicy.app_ file. __Changing__ the server __configuration__ requires a __server restart__: `./policyserver stop && sudo ./policyserver start`.
+   
+          {env, [
+            {policy_file, "./flashpolicy.xml"},  %% string(): policyfile to serve
+            {enable_logging, true},              %% boolean(): enable or disable logging
+            {logfile_path, "./log/"},            %% string(): path to logfiles. must end with path separator '/'
+            {listen_at_interface, any},          %% any | e.g. {192,168,0,2}: the ip address as tuple to bind at, or 'any' to listen at all interfaces
+            {port, 843},                         %% integer(): the port to listen at
+        
+            {bind_also_at, []}                   %% [{interface(), port(), policy_file()}]: additional interfaces and ports to listen at, e.g [{any, 8080, "./otherPolicy.xml"}]
+          ]}
 
-        sudo erl -pa ./ebin -noshell -noinput -detached -flashpolicy enable_logging false -run flashpolicy_app start
+  
+    _bind_also_at_ can be used to serve different policy files at different ports or interfaces.
+  
+* ####Logging:
 
-* Starting Production Server and __log to custom location__ (must end with path separator):
+    Logging can be enabled or disabled during runtime using `./policyserver enable-logging` or `./policyserver disable-logging`. The default logging directory is _./log_.
 
-        sudo erl -pa ./ebin -noshell -noinput -detached -flashpolicy logfile_path '"/var/log/flashpolicy/"' -run flashpolicy_app start

@@ -16,7 +16,6 @@
   accepted_clients = []             %% [pid()]: list of accepted clients that receive policy file content
 }).
 
-
 start_link(Configuration = #socket_config{ policy_file = [_|_], bind_address = ListenAddress, bind_port = Port}) when is_integer(Port) ->
   gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [Configuration], []).
 

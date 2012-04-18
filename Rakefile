@@ -25,7 +25,7 @@ MODULES = "util.erl *.erl"
 desc "Compiles all files and writes the binaries to ./ebin"
 task :build do
   cd "src"
-  sh "erlc  #{ERLC_FLAGS} -v #{MODULES}"
+  sh "erlc  #{ERLC_FLAGS} -v #{MODULES} && cp flashpolicy.app.src ../ebin/flashpolicy.app"
   cd ".."
 end
 

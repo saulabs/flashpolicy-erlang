@@ -75,7 +75,7 @@ task :monitor do
   servers = []
   running_servers.each_line do |server|
     if server.strip != ""
-      /-sname\s+(\w+)\s+.*-setcookie\s+(\S+)\s+/ =~ server
+      /-sname\s+([^\s]+)\s+.*-setcookie\s+([^\s]+)\s+/ =~ server
       node_name = Regexp.last_match(1)
       cookie = Regexp.last_match(2)
       servers << { :node => node_name, :cookie => cookie}

@@ -2,15 +2,19 @@
 # starts, stops and controlls the flash policy server
 # see http://github.com/saulabs/flashpolicy-erlang
 
-COOKIE="flashpolicy-erlang"
 NODE="flashpolicy"
+RANDOM_COOKIE=`head /dev/random | shasum | cut -d " " -f1 | tr -d '\n'`
+COOKIE=`ps ax | grep flashpolicy | grep beam | grep -o -e 'setcookie[[:blank:]]\+[[:alnum:]]\+' | cut -d " " -f2 | tr -d '\n'`
 
 NODE_NAME="$NODE@"`hostname -s`
 ERL=`which erl || echo 'erl'`
 RUN_INCLUDE_PATHS="-pa ./ebin"
 MONITOR_CMD="$ERL -pa $RUN_INCLUDE_PATHS -setcookie $COOKIE -sname monitor -noshell -noinput"
 MONITOR_SHUTDOWN="-run erlang halt"
-SERVER_CMD="$ERL +K true $RUN_INCLUDE_PATHS -noshell -noinput -detached -sname $NODE_NAME -setcookie $COOKIE -heart -run flashpolicy_app start"
+SERVER_CMD="$ERL +K true $RUN_INCLUDE_PATHS -noshell -noinput -detached -sname $NODE_NAME -setcookie $RANDOM_COOKIE -heart -run flashpolicy_app start"
+
+# force epmd to bind to loopback interface only when started by erl command
+export ERL_EPMD_ADDRESS=127.0.0.1
 
 if [ $# -ne 1 ]
 then

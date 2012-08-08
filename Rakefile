@@ -14,13 +14,16 @@ class String
     def colorize(text, color_code)  "#{color_code}#{text}\e[0m" end
 end
 
-COOKIE = "flashpolicy-erlang"
+COOKIE = `head /dev/random | shasum | cut -d " " -f1 | tr -d '\n'`
 NODE_NAME = "flashpolicy"
 
 RUN_INCLUDE_PATHS = "-pa ./ebin -pa ./ebin/eunit -pa ./include -pa ./src"
 ERLC_TEST_FLAGS = "#{RUN_INCLUDE_PATHS} -pa ../ebin/eunit -I .. -I ../test -I ../include/eunit -DTEST"
 ERLC_FLAGS = "+debug_info -W2 -I ../include -o ../ebin -pa ../ebin"
 MODULES = "util.erl *.erl"
+
+# force epmd to bind to loopback interface only when started by erl command
+ENV['ERL_EPMD_ADDRESS']="127.0.0.1"
 
 desc "Compiles all files and writes the binaries to ./ebin"
 task :build do

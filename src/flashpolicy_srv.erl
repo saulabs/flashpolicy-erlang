@@ -17,12 +17,15 @@
 }).
 
 start_link(Configuration = #socket_config{ policy_file = [_|_], bind_address = ListenAddress, bind_port = Port}) when is_integer(Port) ->
+  ok = crypto:start(),
+  ok = ssl:start(),
   gen_server:start_link({local, registered_server_name(ListenAddress, Port)}, ?MODULE, [Configuration], []).
 
 init([Configuration = #socket_config{ policy_file = PolicyFile = [_|_], bind_address = ListenAddress, bind_port = Port}]) when is_integer(Port) ->
   process_flag(trap_exit, true),
 
-  ListenOptions = [binary, {packet_size, 2048}, {packet, 2}, {backlog, 1024}, {active, false}, {reuseaddr, true}] ++
+  ListenOptions = [binary, {packet_size, 2048}, {packet, raw}, {backlog, 1024}, {active, false}, {reuseaddr, true},
+                  {certfile, "./ssl/host.cert"}, {keyfile, "./ssl/host.key"}, {cacertfile, "./ssl/intermediate.cert"}] ++
                   case ListenAddress of
                     {_, _, _, _} -> [{ip, ListenAddress}];
                     _Any -> []
@@ -30,7 +33,7 @@ init([Configuration = #socket_config{ policy_file = PolicyFile = [_|_], bind_add
 
   case load_policy_file(PolicyFile) of
     {ok, PolicyContent} ->
-      case gen_tcp:listen(Port, ListenOptions) of
+      case ssl:listen(Port, ListenOptions) of
         {ok, ServerSocket} ->
           State = #state {
             configuration = Configuration,
@@ -54,7 +57,9 @@ stop() ->
 % accept loop terminated
 handle_info({'EXIT', AcceptLoopPid, Reason}, State = #state {accept_pid = AcceptLoopPid})->
   case Reason of
-    normal -> {stop, normal, State#state {accept_pid = none}};
+    normal -> 
+      error_logger:info_report([{message, 'stopping policy server because accept loop terminated nomally.'}, {module, ?MODULE}, {line, ?LINE}]),
+      {stop, normal, State#state {accept_pid = none}};
     _ ->
       error_logger:error_report([{message, 'restarting accept loop.'}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}]),
       {noreply, State#state {accept_pid = spawn_accept_process(State)}}
@@ -107,26 +112,26 @@ handle_call(Event, _From, State) ->
   {reply, error, State}.
 
 terminate(_Reason, #state {server_socket = ServerSocket}) ->
-  catch gen_tcp:close(ServerSocket),
+  catch ssl:close(ServerSocket),
   ok.
 
 code_change(_OldVsn, State, _Extra) ->
  {ok, State}.
 
 send_to_client(Socket, PolicyContent) ->
-  gen_tcp:send(Socket, PolicyContent).
+  ssl:send(Socket, PolicyContent).
 
 send_policy(Socket, PolicyContent, Address, Port) ->
   receive
     became_controlling_process ->
       SocketOptions = [
         {packet, raw},
-        {active, true},
+        {active, false},
         {send_timeout, 15000},
         {send_timeout_close, true},
         {keepalive, true}
       ],
-      ClientAddress = case catch inet:peername(Socket) of
+      ClientAddress = case catch ssl:peername(Socket) of
         {ok, {{A, B, C, D}, SrcPort}} -> io_lib:format("~b.~b.~b.~b:~b", [A, B, C, D, SrcPort]);
         _ -> "unknown_ip"
       end,
@@ -135,15 +140,24 @@ send_policy(Socket, PolicyContent, Address, Port) ->
         any          -> io_lib:format("localhost:~b", [Port])
       end,
       InfoMessage = io_lib:format("~s => ~s", [lists:flatten(ServerAddress), lists:flatten(ClientAddress)]),
-      case inet:setopts(Socket, SocketOptions) of
-        ok ->
-          case catch send_to_client(Socket, PolicyContent) of
-            ok              -> error_logger:info_report([{ok, lists:flatten(InfoMessage)}]);
-            {error, Reason} -> error_logger:error_report([{message, 'send failed'}, {request, InfoMessage}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
+      case ssl:recv(Socket, _Length = 23, 6000) of
+        {ok, <<"<policy-file-request/>", 0>>} ->
+          case ssl:setopts(Socket, SocketOptions) of
+            ok ->
+              case catch send_to_client(Socket, PolicyContent) of
+                ok              -> error_logger:info_report([{ok, lists:flatten(InfoMessage)}]);
+                {error, Reason} -> error_logger:error_report([{message, 'send failed'}, {request, InfoMessage}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
+              end;
+            Error -> error_logger:error_report([{message, 'set socket options failed'}, {request, InfoMessage}, {error, Error}, {module, ?MODULE}, {line, ?LINE}])
           end;
-        Error -> error_logger:error_report([{message, 'set socket options failed'}, {request, InfoMessage}, {error, Error}, {module, ?MODULE}, {line, ?LINE}])
+        {ok, Bin = <<_/binary>>} -> 
+          error_logger:error_report([{message, 'received unexpected request'}, {request, InfoMessage}, {request, Bin}, {module, ?MODULE}, {line, ?LINE}]);
+        {error,timeout} ->
+          error_logger:error_report([{message, 'timeout while receiving policy request'}, {request, InfoMessage}, {next_try, catch ssl:recv(Socket, ___Length = 10, 10000) }, {module, ?MODULE}, {line, ?LINE}]);
+        Error -> 
+          error_logger:error_report([{message, 'error while receiving data'}, {request, InfoMessage}, {error, Error}, {module, ?MODULE}, {line, ?LINE}])
       end,
-      catch gen_tcp:close(Socket);
+      catch ssl:close(Socket);
     stop -> ok
     after 1000 -> ok
   end.
@@ -153,22 +167,29 @@ spawn_accept_process(State = #state{}) ->
 
 accept(State = #state{}) ->
   #state{server_socket = ServerSocket, policy_data = PolicyContent, configuration = #socket_config {bind_address = Address, bind_port = Port}} = State,
-  case gen_tcp:accept(ServerSocket) of
+  case ssl:transport_accept(ServerSocket) of
     {ok, SocketPid} ->
-      ConnectionPid = spawn(?MODULE, send_policy, [SocketPid, PolicyContent, Address, Port]),
-      case gen_tcp:controlling_process(SocketPid, ConnectionPid) of
-        ok              -> ConnectionPid ! became_controlling_process;
-        {error, closed} -> ConnectionPid ! stop;
-        {error, Reason} -> ConnectionPid ! stop,
-            error_logger:error_report([{message, 'error when setting client connection as controlling process'}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
-      end,
-      handle_socket_messages(State);
-    {error, timeout} ->
-      handle_socket_messages(State);
-    {error, closed} -> % tcp server closed socket, so terminate
-      ok;
+      case catch ssl:ssl_accept(SocketPid) of
+        ok ->
+          ConnectionPid = spawn(?MODULE, send_policy, [SocketPid, PolicyContent, Address, Port]),
+          case ssl:controlling_process(SocketPid, ConnectionPid) of
+            ok              -> ConnectionPid ! became_controlling_process;
+            {error, closed} -> ConnectionPid ! stop;
+            {error, Reason} -> ConnectionPid ! stop,
+                error_logger:error_report([{message, 'error when setting client connection as controlling process'}, {error, Reason}, {module, ?MODULE}, {line, ?LINE}])
+          end,
+          handle_socket_messages(State);
+        {error, timeout} ->
+          handle_socket_messages(State);
+        {error, closed} ->
+          error_logger:error_report([{message, 'client closed connection during ssl handshake'}, {error, closed}, {module, ?MODULE}, {line, ?LINE}]),
+          handle_socket_messages(State);
+        Error ->
+          error_logger:error_report([{message, 'unexpected error during accept.'}, {error, Error}, {module, ?MODULE}, {line, ?LINE}]),
+          handle_socket_messages(State)
+      end;
     Error ->
-      error_logger:error_report([{message, 'unexpected error during accept.'}, {error, Error}, {module, ?MODULE}, {line, ?LINE}]),
+      error_logger:error_report([{message, 'unexpected error during transport accept.'}, {error, Error}, {module, ?MODULE}, {line, ?LINE}]),
       handle_socket_messages(State)
   end.
 

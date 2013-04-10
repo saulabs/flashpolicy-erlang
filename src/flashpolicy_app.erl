@@ -13,7 +13,9 @@
 -export([start/0, enable_logging/1, reload_policy_files/0]).
 
 
--define(DEFAULT_FILE, "./flashpolicy.xml").
+-define(DEFAULT_POLICY_FILE, "./flashpolicy.xml").
+-define(DEFAULT_CERTIFICATE_FILE, "./ssl/host.cert").
+-define(DEFAULT_KEY_FILE, "./ssl/host.key").
 -define(DEFAULT_LOG_PATH, "./log/").
 -define(DEFAULT_LOGGING, false).
 -define(DEFAULT_ADDRESS, any).
@@ -56,14 +58,22 @@ start(_StartType, _StartArgs) ->
   ServerConfig = #socket_config {
     bind_address    = get_env_with_default(listen_at_interface, ?DEFAULT_ADDRESS),
     bind_port       = get_env_with_default(port, ?DEFAULT_PORT),
-    policy_file     = get_env_with_default(policy_file, ?DEFAULT_FILE)
+    policy_file     = get_env_with_default(policy_file, ?DEFAULT_POLICY_FILE),
+    cert_file       = CertFile = get_env_with_default(cert_file, ?DEFAULT_CERTIFICATE_FILE),
+    key_file        = KeyFile  = get_env_with_default(key_file, ?DEFAULT_KEY_FILE),
+    key_pwd         = KeyPwd   = get_env_with_default(key_pwd, none),
+    intermediate_cert_file = IntermediateCertFile = get_env_with_default(intermediate_cert_file, none)    
   },
 
   ConfigForAdditionalServers = [
     #socket_config {
       bind_address    = Interface,
       bind_port       = Port,
-      policy_file     = PolicyFile
+      policy_file     = PolicyFile,
+      cert_file       = CertFile,
+      key_file        = KeyFile,
+      key_pwd         = KeyPwd,
+      intermediate_cert_file = IntermediateCertFile            
     } || {Interface, Port, PolicyFile} <- get_env_with_default(bind_also_at, [])],
 
   enable_logging(get_env_with_default(enable_logging, ?DEFAULT_LOGGING)),

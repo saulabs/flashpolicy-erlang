@@ -24,12 +24,21 @@ start_link(Configuration = #socket_config{ policy_file = [_|_], bind_address = L
 init([Configuration = #socket_config{ policy_file = PolicyFile = [_|_], bind_address = ListenAddress, bind_port = Port}]) when is_integer(Port) ->
   process_flag(trap_exit, true),
 
-  ListenOptions = [binary, {packet_size, 2048}, {packet, raw}, {backlog, 1024}, {active, false}, {reuseaddr, true},
-                  {certfile, "./ssl/host.cert"}, {keyfile, "./ssl/host.key"}, {cacertfile, "./ssl/intermediate.cert"}] ++
+  #socket_config{cert_file = CertFile, key_file = KeyFile} = Configuration,
+  SSLOptions = [{certfile, CertFile}, {keyfile, KeyFile}] ++
+               case Configuration of
+                 #socket_config{intermediate_cert_file = IntermediateCertFile} when is_list(IntermediateCertFile) -> [{cacertfile, IntermediateCertFile}];
+                 _ -> []
+               end ++ case Configuration of
+                 #socket_config{key_pwd = KeyPassword} when is_list(KeyPassword) -> [{password, KeyPassword}];
+                 _ -> []
+               end, 
+
+  ListenOptions = [binary, {packet_size, 2048}, {packet, raw}, {backlog, 1024}, {active, false}, {reuseaddr, true}] ++
                   case ListenAddress of
                     {_, _, _, _} -> [{ip, ListenAddress}];
                     _Any -> []
-                  end,
+                  end ++ SSLOptions,
 
   case load_policy_file(PolicyFile) of
     {ok, PolicyContent} ->

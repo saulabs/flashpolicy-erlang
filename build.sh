@@ -7,8 +7,10 @@ if [ $? -eq 0 ]; then
   echo "Build succeeded. To continue..."
   echo
   echo "1. Edit flashpolicy.xml"
-  echo "2. Start server: \`sudo ./policyserver start\`"
-  echo "3. Test server : \`./policyserver test\`"
-  echo "4. Stop server : \`./policyserver stop\`"
+  echo "2. Copy your valid Certificate to ./ssl/host.cert"
+  echo "3. Copy you secret Certificate key to ./ssl/host.key"
+  echo "4. Start server: \`sudo ./policyserver start\`"
+  echo "5. Test server : \`./policyserver test\`"
+  echo "6. Stop server : \`./policyserver stop\`"
 fi
 cd ..

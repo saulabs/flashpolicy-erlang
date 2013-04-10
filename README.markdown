@@ -4,6 +4,11 @@ Erlang Flash Policy File Server
 
 ###Erlang Server serving flash crossdomain policies on adobe standard port 843, intended for use in production environments.
 
+This policy server accepts **Policy File Requests** from Flash Movies that use the **[flash.net.XMLSocket](http://help.adobe.com/en_US/FlashPlatform/reference/actionscript/3/flash/net/XMLSocket.html) Class**. These requests are sent by the Flash Player automatically, if the Flash Movie tries to connect to a different host as the origin of the Flash Movie.
+
+**If you use the [flash.net.SecureSocket](http://help.adobe.com/en_US/FlashPlatform/reference/actionscript/3/flash/net/SecureSocket.html) Class** to establish a **SSL encrypted connection to your Server**, the Flash Player **requests the master policy** at Port 843 **also SSL encrypted**, which is not very well documented by Adobe. **In that case** you should **use the [ssl branch](https://github.com/saulabs/flashpolicy-erlang/tree/ssl)** of this project, otherwise the policy file requests will fail.
+
+
 * ####Building Server:
 
         ./build.sh

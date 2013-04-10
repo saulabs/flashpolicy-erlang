@@ -26,7 +26,8 @@ then
   echo "stop:            stops the runnning flash policy server"
   echo "status:          prints the server status to stdout"
   echo "reload:          reloads the flashpolicy.xml file"
-  echo "test:            loads the flash policy file from the server via http"
+  echo "test:            loads the flash policy file from the server via tcp"
+  echo "test-ssl:        loads the flash policy file from the server via ssl"
   echo "enable-logging:  enables the logging of accepted connections"
   echo "disable-logging: disables the logging of accepted connections"
   echo
@@ -62,6 +63,9 @@ else
   elif [ $ACTION == "test" ]; then
     echo "loading policy file from server..."
     curl --  http://127.0.0.1:843
+  elif [ $ACTION == "test-ssl" ]; then
+    echo "loading policy file from server via ssl..."
+    perl -e 'printf "<policy-file-request/>%c",0' | openssl s_client -quiet -verify 3 -connect 127.0.0.1:843
   elif [ $ACTION == "enable-logging" ]; then
     echo "enabling logging..."
     $MONITOR_CMD -run flashpolicy_app execute $NODE_NAME enable-logging $MONITOR_SHUTDOWN

@@ -90,7 +90,7 @@ task :monitor do
     node_name = servers[0][:node]
     cookie = servers[0][:cookie]
     puts "connecting to node '#{node_name}' on host '#{host_name}' with cookie '#{cookie}'"
-    sh "erl #{RUN_INCLUDE_PATHS} -setcookie #{cookie} -sname #{monitor_name} -remsh #{node_name}@#{host_name}"
+    sh "erl #{RUN_INCLUDE_PATHS} -setcookie #{cookie} -sname #{monitor_name} -remsh #{node_name}"
   else
     puts "choose server ..."
     servers.each_with_index do |server, i|
@@ -103,7 +103,7 @@ task :monitor do
       node_name = servers[i-1][:node]
       cookie = servers[i-1][:cookie]
       puts "connecting to node '#{node_name}' on host '#{host_name}' with cookie '#{cookie}'"
-      sh "erl #{RUN_INCLUDE_PATHS} -setcookie #{cookie} -sname #{monitor_name} -remsh #{node_name}@#{host_name}"
+      sh "erl #{RUN_INCLUDE_PATHS} -setcookie #{cookie} -sname #{monitor_name} -remsh #{node_name}"
     end
   end
 end
